@@ -11,8 +11,6 @@ class CryptoService {
   late final SimpleKeyPair _myKeyPair;
   late final SimplePublicKey _myPublicKey;
   bool _initialized = false;
-
-  // Mapa de friendNumber (ou ID) -> SimplePublicKey
   final Map<String, SimplePublicKey> _friendPublicKeys = {};
 
   Future<void> init() async {
@@ -35,10 +33,8 @@ class CryptoService {
     _initialized = true;
   }
 
-  /// Retorna a chave pública em base64 (para partilhar via QR/link)
   String get publicKeyBase64 => base64Encode(_myPublicKey.bytes);
 
-  /// Adiciona a chave pública de um amigo (recebida por QR ou manualmente)
   void addFriendPublicKey(String friendId, String pubKeyBase64) {
     _friendPublicKeys[friendId] = SimplePublicKey(
       Uint8List.fromList(base64Decode(pubKeyBase64)),
@@ -46,7 +42,6 @@ class CryptoService {
     );
   }
 
-  /// Cifra uma mensagem para um amigo específico
   Future<String> encryptMessage(String friendId, String plainText) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
@@ -63,7 +58,6 @@ class CryptoService {
       secretKey: sharedSecret,
     );
 
-    // Retorna o ciphertext + nonce + mac em base64
     final payload = {
       'ciphertext': base64Encode(secretBox.cipherText),
       'nonce': base64Encode(secretBox.nonce),
@@ -72,7 +66,6 @@ class CryptoService {
     return base64Encode(utf8.encode(jsonEncode(payload)));
   }
 
-  /// Decifra uma mensagem recebida de um amigo
   Future<String> decryptMessage(String friendId, String encryptedPayload) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
