@@ -1,5 +1,5 @@
 name: p2p_chat
-description: Chat P2P seguro com Tox (rede descentralizada)
+description: Chat P2P seguro com encriptação ponta a ponta
 
 publish_to: 'none'
 version: 1.0.0+1
@@ -15,8 +15,8 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_animate: ^4.2.0
   shared_preferences: ^2.2.2
-  path_provider: ^2.1.2
-  ffi: ^2.1.0
+  cryptography: ^2.7.0
+  sqflite_sqlcipher: ^2.3.3
 
 dev_dependencies:
   flutter_test:
