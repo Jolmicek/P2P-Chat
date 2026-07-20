@@ -5,9 +5,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
-// ------------------------------------------------------
-// Bindings FFI
-// ------------------------------------------------------
+// Tipos nativos
 typedef ToxNewNative = Pointer<Void> Function(Pointer<Void> options);
 typedef ToxNewDart = Pointer<Void> Function(Pointer<Void> options);
 
@@ -34,9 +32,6 @@ typedef ToxCallbackFriendMessageDart = void Function(Pointer<Void> tox, Pointer<
 
 typedef FriendMessageCallbackNative = Void Function(Pointer<Void> tox, Uint32 friendNumber, Uint32 type, Pointer<Utf8> message, Uint32 length, Pointer<Void> userData);
 
-// ------------------------------------------------------
-// Serviço Tox
-// ------------------------------------------------------
 class ToxService {
   static final ToxService _instance = ToxService._internal();
   factory ToxService() => _instance;
@@ -71,7 +66,6 @@ class ToxService {
     _tox = toxNew(nullptr);
     if (_tox == nullptr) throw Exception('Falha ao criar Tox');
 
-    // Registrar callback para mensagens recebidas
     final messageCallback = Pointer.fromFunction<FriendMessageCallbackNative>(_onMessageReceived);
     toxCallbackFriendMessage(_tox, messageCallback, nullptr);
 
@@ -88,14 +82,12 @@ class ToxService {
       calloc.free(key);
     }
 
-    // Obter próprio Tox ID
     final addrBuf = calloc<Uint8>(38);
     toxSelfGetAddress(_tox, addrBuf);
     final addrBytes = addrBuf.asTypedList(38);
     _ownAddress = addrBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('');
     calloc.free(addrBuf);
 
-    // Iniciar loop de iteração
     Isolate.spawn(_toxIterateLoop, _tox.address);
 
     _initialized = true;
@@ -139,9 +131,6 @@ class ToxService {
   }
 }
 
-// ------------------------------------------------------
-// Eventos
-// ------------------------------------------------------
 abstract class ToxEvent {}
 class ToxMessageEvent extends ToxEvent {
   final int friendNumber;
@@ -149,7 +138,6 @@ class ToxMessageEvent extends ToxEvent {
   ToxMessageEvent(this.friendNumber, this.message);
 }
 
-// Extensão para converter hex em bytes
 extension StringToBytes on String {
   Uint8List hexToBytes() {
     final result = Uint8List(length ~/ 2);
