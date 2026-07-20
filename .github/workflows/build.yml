@@ -15,7 +15,7 @@ jobs:
         with:
           ndk-version: r25c
 
-      # ---- Compilar libsodium ----
+      # ---- Compilar libsodium (apenas arm64-v8a e x86_64) ----
       - name: Checkout libsodium
         uses: actions/checkout@v4
         with:
@@ -23,7 +23,7 @@ jobs:
           path: libsodium
           ref: 1.0.19
 
-      - name: Build libsodium for arm64-v8a
+      - name: Build libsodium for arm64-v8a (API 21)
         run: |
           cd libsodium
           ./autogen.sh
@@ -31,21 +31,14 @@ jobs:
           mkdir -p ../android/app/src/main/jniLibs/arm64-v8a
           cp libsodium-android-armv8-a*/lib/libsodium.so ../android/app/src/main/jniLibs/arm64-v8a/
 
-      - name: Build libsodium for armeabi-v7a
-        run: |
-          cd libsodium
-          bash ./dist-build/android-armv7-a.sh
-          mkdir -p ../android/app/src/main/jniLibs/armeabi-v7a
-          cp libsodium-android-armv7-a*/lib/libsodium.so ../android/app/src/main/jniLibs/armeabi-v7a/
-
-      - name: Build libsodium for x86_64
+      - name: Build libsodium for x86_64 (API 21)
         run: |
           cd libsodium
           bash ./dist-build/android-x86_64.sh
           mkdir -p ../android/app/src/main/jniLibs/x86_64
           cp libsodium-android-x86_64*/lib/libsodium.so ../android/app/src/main/jniLibs/x86_64/
 
-      # ---- Compilar c-toxcore ----
+      # ---- Compilar c-toxcore (apenas para as mesmas arquiteturas) ----
       - name: Checkout c-toxcore
         uses: actions/checkout@v4
         with:
@@ -69,24 +62,6 @@ jobs:
             -DSODIUM_INCLUDE_DIR=$GITHUB_WORKSPACE/libsodium/src/libsodium/include
           cmake --build . --target toxcore -- -j$(nproc)
           cp lib/libtoxcore.so $GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/libtoxcore.so
-
-      - name: Build c-toxcore for armeabi-v7a
-        run: |
-          cd c-toxcore
-          rm -rf build_android
-          mkdir build_android && cd build_android
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=armeabi-v7a \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_SHARED=ON \
-            -DBUILD_TOXAV=OFF \
-            -DBUILD_TESTING=OFF \
-            -DSODIUM_LIBRARY=$GITHUB_WORKSPACE/android/app/src/main/jniLibs/armeabi-v7a/libsodium.so \
-            -DSODIUM_INCLUDE_DIR=$GITHUB_WORKSPACE/libsodium/src/libsodium/include
-          cmake --build . --target toxcore -- -j$(nproc)
-          cp lib/libtoxcore.so $GITHUB_WORKSPACE/android/app/src/main/jniLibs/armeabi-v7a/libtoxcore.so
 
       - name: Build c-toxcore for x86_64
         run: |
