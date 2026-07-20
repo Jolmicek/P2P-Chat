@@ -94,7 +94,7 @@ class P2PChatApp extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ DE DEFINIÇÕES (movido para cima para evitar erro)
+// ECRÃ DE DEFINIÇÕES
 // ------------------------------------------------------
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -161,6 +161,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 case 'scan':
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanScreen()));
                   break;
+                case 'manual':
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ManualAddScreen()));
+                  break;
                 case 'settings':
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
                   break;
@@ -173,7 +176,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
             },
             itemBuilder: (BuildContext context) => [
               const PopupMenuItem(value: 'myid', child: Text('🔑 O meu ID')),
-              const PopupMenuItem(value: 'scan', child: Text('📷 Escanear')),
+              const PopupMenuItem(value: 'scan', child: Text('📷 Escanear QR')),
+              const PopupMenuItem(value: 'manual', child: Text('✍️ Adicionar manualmente')),
               const PopupMenuItem(value: 'settings', child: Text('⚙️ Definições')),
               const PopupMenuItem(value: 'connection', child: Text('🌐 Conexão')),
             ],
@@ -381,7 +385,6 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          // Campo de envio
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: const BoxDecoration(
@@ -473,7 +476,7 @@ class IdScreen extends StatelessWidget {
                   size: 200,
                   backgroundColor: Colors.white,
                   eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.circle,   // <-- CORRIGIDO
+                    eyeShape: QrEyeShape.circle,
                     color: Color(0xFF6C63FF),
                   ),
                   dataModuleStyle: const QrDataModuleStyle(
@@ -521,6 +524,13 @@ class IdScreen extends StatelessWidget {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanScreen()));
                     },
                   ),
+                  _ActionButton(
+                    icon: Icons.person_add_alt,
+                    label: 'Adicionar',
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ManualAddScreen()));
+                    },
+                  ),
                 ],
               ),
             ],
@@ -566,7 +576,7 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ DO SCANNER DE QR (CORRIGIDO)
+// ECRÃ DE SCANNER DE QR (CÂMARA REAL)
 // ------------------------------------------------------
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -596,7 +606,7 @@ class _ScanScreenState extends State<ScanScreen> {
     final barcode = capture.barcodes.firstOrNull;
     if (barcode?.rawValue != null) {
       final code = barcode!.rawValue!;
-      if (code.length == 76) {
+      if (code.length == 76) { // Simples validação de Tox ID
         setState(() => _scanned = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -654,6 +664,82 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------
+// ECRÃ PARA ADICIONAR AMIGO MANUALMENTE (FALLBACK)
+// ------------------------------------------------------
+class ManualAddScreen extends StatefulWidget {
+  const ManualAddScreen({super.key});
+
+  @override
+  State<ManualAddScreen> createState() => _ManualAddScreenState();
+}
+
+class _ManualAddScreenState extends State<ManualAddScreen> {
+  final TextEditingController _idController = TextEditingController();
+
+  void _addFriend() {
+    final id = _idController.text.trim();
+    if (id.length != 76) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ID inválido. Deve ter 76 caracteres.')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Pedido enviado para: ${id.substring(0, 12)}...')),
+    );
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Adicionar amigo'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.person_add_alt, size: 64, color: Color(0xFF6C63FF)),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _idController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Cola o Tox ID aqui...',
+                hintStyle: const TextStyle(color: Colors.white30),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _addFriend,
+              icon: const Icon(Icons.check),
+              label: const Text('Adicionar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C63FF),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
