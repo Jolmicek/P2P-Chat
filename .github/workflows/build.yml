@@ -22,23 +22,27 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Backup do AndroidManifest (contém permissões de câmara/internet)
+      # Garantir que o pubspec tem o nome correto (substitui pelo ficheiro preparado)
+      - name: Force correct project name
+        run: cp pubspec_correct.yaml pubspec.yaml
+
+      # Backup do AndroidManifest (com permissões)
       - name: Backup AndroidManifest
         run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml || true
 
-      # Regenerar a pasta Android (Gradle wrapper, etc.) com o nome já correto
+      # Regenerar a plataforma Android (agora o nome é p2p_chat)
       - name: Regenerate Android platform
         run: flutter create --platforms android .
 
-      # Restaurar as permissões originais
+      # Restaurar as tuas permissões
       - name: Restore AndroidManifest
         run: cp -f AndroidManifest_backup.xml android/app/src/main/AndroidManifest.xml
 
-      # Corrigir a versão do NDK no build.gradle.kts
+      # Corrigir versão do NDK
       - name: Set correct NDK version
         run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
 
-      # Descarregar bibliotecas oficiais do Tox
+      # Descarregar as bibliotecas oficiais do Tox
       - name: Download Tox native libraries
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
