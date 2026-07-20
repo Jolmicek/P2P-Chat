@@ -24,14 +24,24 @@ class CryptoService {
     final algorithm = X25519();
 
     if (savedPriv != null) {
-      final privKey = SimpleKeyPairData(
-        Uint8List.fromList(base64Decode(savedPriv)),
-        type: KeyPairType.x25519,
+      final privBytes = base64Decode(savedPriv);
+      // Construtor atualizado: SimpleKeyPairData requer 'bytes' (a chave privada) e 'publicKey'
+      // Podemos extrair a chave pública diretamente da chave privada
+      final publicKey = await algorithm.extractPublicKey(SecretKey(privBytes));
+      final keyPairData = SimpleKeyPairData(
+        bytes: privBytes,
+        publicKey: publicKey, // Agora é obrigatório
       );
-      _myKeyPair = SimpleKeyPair(privKey, publicKey: await algorithm.extractPublicKey(privKey));
+      _myKeyPair = SimpleKeyPair(
+        keyPairData,
+        publicKey: publicKey,
+      );
     } else {
       _myKeyPair = await algorithm.newKeyPair();
-      await prefs.setString('my_private_key', base64Encode(await _myKeyPair.extractPrivateKeyBytes()));
+      await prefs.setString(
+        'my_private_key',
+        base64Encode(await _myKeyPair.extractPrivateKeyBytes()),
+      );
     }
     _myPublicKey = await _myKeyPair.extractPublicKey();
 
@@ -53,7 +63,7 @@ class CryptoService {
   /// Adiciona a chave pública de um amigo (recebida por QR/link).
   void addFriendPublicKey(String friendId, String pubKeyBase64) {
     _friendPublicKeys[friendId] = SimplePublicKey(
-      Uint8List.fromList(base64Decode(pubKeyBase64)),
+      base64Decode(pubKeyBase64),
       type: KeyPairType.x25519,
     );
   }
