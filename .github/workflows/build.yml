@@ -22,23 +22,52 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Garantir que o pubspec tem o nome correto (substitui pelo ficheiro preparado)
-      - name: Force correct project name
-        run: cp pubspec_correct.yaml pubspec.yaml
-
-      # Backup do AndroidManifest (com permissões)
+      # Guardar as permissões da câmara/internet antes de apagar a pasta android
       - name: Backup AndroidManifest
-        run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml || true
+        run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
 
-      # Regenerar a plataforma Android (agora o nome é p2p_chat)
+      # Apagar a pasta android (vai ser recriada de seguida)
+      - name: Remove old android folder
+        run: rm -rf android
+
+      # Escrever o pubspec.yaml correto (nome p2p_chat) – sem depender de ficheiros extra
+      - name: Write correct pubspec.yaml
+        run: |
+          cat > pubspec.yaml << 'EOF'
+          name: p2p_chat
+          description: Chat P2P seguro com Tox
+          publish_to: 'none'
+          version: 1.0.0+1
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+          dependencies:
+            flutter:
+              sdk: flutter
+            qr_flutter: ^4.1.0
+            mobile_scanner: ^3.5.7
+            google_fonts: ^6.1.0
+            flutter_animate: ^4.2.0
+            shared_preferences: ^2.2.2
+            sqflite: ^2.3.0
+            cryptography: ^2.7.0
+            path_provider: ^2.1.2
+            ffi: ^2.1.0
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+          flutter:
+            uses-material-design: true
+          EOF
+
+      # Recriar a plataforma Android (agora o nome é válido e a pasta está limpa)
       - name: Regenerate Android platform
         run: flutter create --platforms android .
 
-      # Restaurar as tuas permissões
+      # Restaurar as permissões da câmara e internet
       - name: Restore AndroidManifest
-        run: cp -f AndroidManifest_backup.xml android/app/src/main/AndroidManifest.xml
+        run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-      # Corrigir versão do NDK
+      # Forçar a versão correta do NDK
       - name: Set correct NDK version
         run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
 
