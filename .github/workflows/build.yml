@@ -22,52 +22,21 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # ============================================================
-      # PASSO CRÍTICO: Escrever pubspec.yaml correto e limpar .metadata
-      # ============================================================
-      - name: Write correct pubspec.yaml and remove old .metadata
-        run: |
-          cat > pubspec.yaml << 'EOF'
-          name: p2p_chat
-          description: Chat P2P seguro com Tox
-          publish_to: 'none'
-          version: 1.0.0+1
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-          dependencies:
-            flutter:
-              sdk: flutter
-            qr_flutter: ^4.1.0
-            mobile_scanner: ^3.5.7
-            google_fonts: ^6.1.0
-            flutter_animate: ^4.2.0
-            shared_preferences: ^2.2.2
-            sqflite: ^2.3.0
-            cryptography: ^2.7.0
-            path_provider: ^2.1.2
-            ffi: ^2.1.0
-          dev_dependencies:
-            flutter_test:
-              sdk: flutter
-          flutter:
-            uses-material-design: true
-          EOF
-          rm -f .metadata
-        shell: bash
-
-      # Backup do AndroidManifest (permissões)
+      # Backup do AndroidManifest (com permissões)
       - name: Backup AndroidManifest
         run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
         shell: bash
 
-      # Remover pasta android existente
-      - name: Remove old android folder
-        run: rm -rf android
+      # Remover pasta android e .metadata antigos
+      - name: Remove old android folder and metadata
+        run: |
+          rm -rf android
+          rm -f .metadata
         shell: bash
 
-      # Recriar a plataforma Android (agora o nome é p2p_chat)
+      # Recriar a plataforma Android FORÇANDO o nome p2p_chat
       - name: Regenerate Android platform
-        run: flutter create --platforms android .
+        run: flutter create --project-name p2p_chat --platforms android .
         shell: bash
 
       # Restaurar o AndroidManifest com permissões
@@ -80,7 +49,7 @@ jobs:
         run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
         shell: bash
 
-      # Limpar cache do Gradle (elimina Kotlin antigo)
+      # Limpar cache do Gradle (Kotlin antigo)
       - name: Clear Gradle cache
         run: rm -rf /home/runner/.gradle/caches/
         shell: bash
