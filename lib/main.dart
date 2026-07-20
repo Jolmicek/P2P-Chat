@@ -1,25 +1,51 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ------------------------------------------------------
 // MODELOS SIMPLES
 // ------------------------------------------------------
 class Contact {
-  final String id;
-  final String name;
-  String lastMessage;
-  String lastTime;
-  int unreadCount;
+  final String id;      // Tox ID
+  String name;          // Nome visível (pode ser derivado do ID)
+  List<Message> messages;
 
   Contact({
     required this.id,
     required this.name,
-    required this.lastMessage,
-    required this.lastTime,
-    this.unreadCount = 0,
-  });
+    List<Message>? messages,
+  }) : messages = messages ?? [];
+
+  String get lastMessage {
+    if (messages.isEmpty) return '';
+    return messages.last.text;
+  }
+
+  String get lastTime {
+    if (messages.isEmpty) return '';
+    final time = messages.last.time;
+    // Formata só a hora
+    return time; // Já guardamos como HH:mm
+  }
+
+  int get unreadCount => 0; // Placeholder até implementares notificações
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'messages': messages.map((m) => m.toJson()).toList(),
+      };
+
+  factory Contact.fromJson(Map<String, dynamic> json) => Contact(
+        id: json['id'],
+        name: json['name'],
+        messages: (json['messages'] as List)
+            .map((m) => Message.fromJson(m))
+            .toList(),
+      );
 }
 
 class Message {
@@ -28,40 +54,40 @@ class Message {
   final String time;
 
   Message({required this.text, required this.isMe, required this.time});
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'isMe': isMe,
+        'time': time,
+      };
+
+  factory Message.fromJson(Map<String, dynamic> json) => Message(
+        text: json['text'],
+        isMe: json['isMe'],
+        time: json['time'],
+      );
 }
 
 // ------------------------------------------------------
-// DADOS DE EXEMPLO
+// SERVIÇO DE ARMAZENAMENTO LOCAL
 // ------------------------------------------------------
-final List<Contact> sampleContacts = [
-  Contact(
-    id: 'd0c4e1...a1b2',
-    name: 'Alice',
-    lastMessage: 'Sim, está tudo pronto! 🔒',
-    lastTime: '14:35',
-    unreadCount: 2,
-  ),
-  Contact(
-    id: 'f8e3a2...c9d5',
-    name: 'Bob',
-    lastMessage: 'Amanhã às 10?',
-    lastTime: '12:10',
-  ),
-  Contact(
-    id: 'b7c8d1...e6f3',
-    name: 'Carol',
-    lastMessage: 'QR code enviado.',
-    lastTime: 'Ontem',
-    unreadCount: 1,
-  ),
-];
+class StorageService {
+  static const _contactsKey = 'contacts';
 
-final List<Message> sampleMessages = [
-  Message(text: 'Olá! Vi o teu QR code.', isMe: false, time: '14:30'),
-  Message(text: 'Boas! Sim, estava a testar a app.', isMe: true, time: '14:31'),
-  Message(text: 'A encriptação está a funcionar?', isMe: false, time: '14:32'),
-  Message(text: 'Sim, tudo encriptado ponta a ponta. 😎', isMe: true, time: '14:33'),
-];
+  static Future<List<Contact>> loadContacts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getString(_contactsKey);
+    if (data == null) return [];
+    final List<dynamic> list = jsonDecode(data);
+    return list.map((e) => Contact.fromJson(e)).toList();
+  }
+
+  static Future<void> saveContacts(List<Contact> contacts) async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = jsonEncode(contacts.map((c) => c.toJson()).toList());
+    await prefs.setString(_contactsKey, data);
+  }
+}
 
 // ------------------------------------------------------
 // APP PRINCIPAL
@@ -122,7 +148,7 @@ class SettingsScreen extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ PRINCIPAL: LISTA DE CONVERSAS
+// ECRÃ PRINCIPAL: LISTA DE CONVERSAS (COM DADOS REAIS)
 // ------------------------------------------------------
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -132,17 +158,43 @@ class ContactsScreen extends StatefulWidget {
 }
 
 class _ContactsScreenState extends State<ContactsScreen> {
-  final List<Contact> contacts = List.from(sampleContacts);
+  List<Contact> contacts = [];
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    final loaded = await StorageService.loadContacts();
+    setState(() => contacts = loaded);
+  }
 
   List<Contact> get filteredContacts =>
       contacts.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
+  void _addNewContact(String id) {
+    if (contacts.any((c) => c.id == id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este contacto já existe.')),
+      );
+      return;
+    }
+    final name = 'Amigo ${contacts.length + 1}'; // Nome provisório
+    setState(() {
+      contacts.add(Contact(id: id, name: name));
+    });
+    StorageService.saveContacts(contacts);
+  }
 
   void _updateContact(Contact updated) {
     setState(() {
       final index = contacts.indexWhere((c) => c.id == updated.id);
       if (index != -1) contacts[index] = updated;
     });
+    StorageService.saveContacts(contacts);
   }
 
   @override
@@ -153,16 +205,28 @@ class _ContactsScreenState extends State<ContactsScreen> {
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
+            onSelected: (value) async {
               switch (value) {
                 case 'myid':
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const IdScreen()));
                   break;
                 case 'scan':
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanScreen()));
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ScanScreen()),
+                  );
+                  if (result is String && result.length == 76) {
+                    _addNewContact(result);
+                  }
                   break;
                 case 'manual':
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ManualAddScreen()));
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ManualAddScreen()),
+                  );
+                  if (result is String && result.length == 76) {
+                    _addNewContact(result);
+                  }
                   break;
                 case 'settings':
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
@@ -206,27 +270,35 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: filteredContacts.length,
-              itemBuilder: (context, index) {
-                final contact = filteredContacts[index];
-                return _ContactTile(
-                  contact: contact,
-                  onTap: () async {
-                    final updated = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(contact: contact),
-                      ),
-                    );
-                    if (updated != null && updated is Contact) {
-                      _updateContact(updated);
-                    }
-                  },
-                );
-              },
-            ),
+            child: contacts.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Nenhum contacto.\nAdiciona amigos pelo menu ⋮',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: filteredContacts.length,
+                    itemBuilder: (context, index) {
+                      final contact = filteredContacts[index];
+                      return _ContactTile(
+                        contact: contact,
+                        onTap: () async {
+                          final updated = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatScreen(contact: contact),
+                            ),
+                          );
+                          if (updated != null && updated is Contact) {
+                            _updateContact(updated);
+                          }
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -257,37 +329,23 @@ class _ContactTile extends StatelessWidget {
         contact.name,
         style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.white),
       ),
-      subtitle: Text(
-        contact.lastMessage,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: Colors.white54),
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(contact.lastTime, style: const TextStyle(fontSize: 11, color: Colors.white38)),
-          if (contact.unreadCount > 0)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: const BoxDecoration(
-                color: Color(0xFF6C63FF),
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                '${contact.unreadCount}',
-                style: const TextStyle(fontSize: 11, color: Colors.white),
-              ),
-            ),
-        ],
-      ),
+      subtitle: contact.lastMessage.isNotEmpty
+          ? Text(
+              contact.lastMessage,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.white54),
+            )
+          : null,
+      trailing: contact.lastTime.isNotEmpty
+          ? Text(contact.lastTime, style: const TextStyle(fontSize: 11, color: Colors.white38))
+          : null,
     );
   }
 }
 
 // ------------------------------------------------------
-// ECRÃ DE CHAT
+// ECRÃ DE CHAT (COM PERSISTÊNCIA)
 // ------------------------------------------------------
 class ChatScreen extends StatefulWidget {
   final Contact contact;
@@ -304,22 +362,27 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    messages = List.from(sampleMessages);
+    messages = List.from(widget.contact.messages);
+  }
+
+  String _formatTime(DateTime date) {
+    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    final now = TimeOfDay.now();
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final now = DateTime.now();
+    final timeStr = _formatTime(now);
 
     setState(() {
       messages.add(Message(text: text, isMe: true, time: timeStr));
-      widget.contact.lastMessage = text;
-      widget.contact.lastTime = 'Agora';
     });
 
+    // Atualiza o contacto com as mensagens mais recentes
+    widget.contact.messages = List.from(messages);
+    // Não é necessário guardar já aqui, será feito quando voltar à ContactsScreen
     _messageController.clear();
   }
 
@@ -329,7 +392,10 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Navigator.pop(context, widget.contact),
+          onPressed: () {
+            // Devolve o contacto atualizado
+            Navigator.pop(context, widget.contact);
+          },
         ),
         title: Row(
           children: [
@@ -441,7 +507,7 @@ class IdScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const myToxId = 'd0c4e1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab';
+    const myToxId = 'd0c4e1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'; // Substitui pelo teu ID real quando houver
 
     return Scaffold(
       appBar: AppBar(
@@ -520,15 +586,31 @@ class IdScreen extends StatelessWidget {
                   _ActionButton(
                     icon: Icons.qr_code_scanner,
                     label: 'Escanear',
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ScanScreen()));
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ScanScreen()),
+                      );
+                      if (result is String && result.length == 76) {
+                        // Podias adicionar aqui, mas vamos delegar à ContactsScreen
+                        if (context.mounted) {
+                          Navigator.pop(context); // Volta para ContactsScreen que trata da adição
+                          // Alternativa: usar callback, mas assim simplifica
+                        }
+                      }
                     },
                   ),
                   _ActionButton(
                     icon: Icons.person_add_alt,
                     label: 'Adicionar',
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const ManualAddScreen()));
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ManualAddScreen()),
+                      );
+                      if (result is String && result.length == 76 && context.mounted) {
+                        Navigator.pop(context); // Volta
+                      }
                     },
                   ),
                 ],
@@ -576,7 +658,7 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ DE SCANNER DE QR (CÂMARA REAL)
+// ECRÃ DE SCANNER DE QR (DEVOLVE O ID LIDO)
 // ------------------------------------------------------
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -606,23 +688,10 @@ class _ScanScreenState extends State<ScanScreen> {
     final barcode = capture.barcodes.firstOrNull;
     if (barcode?.rawValue != null) {
       final code = barcode!.rawValue!;
-      if (code.length == 76) { // Simples validação de Tox ID
+      if (code.length == 76) {
         setState(() => _scanned = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('ID detectado: ${code.substring(0, 12)}...'),
-            action: SnackBarAction(label: 'Adicionar', onPressed: () {
-              Navigator.pop(context);
-            }),
-          ),
-        );
-        controller.stop();
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) {
-            controller.start();
-            setState(() => _scanned = false);
-          }
-        });
+        // Devolve o ID para a tela anterior
+        Navigator.pop(context, code);
       }
     }
   }
@@ -670,7 +739,7 @@ class _ScanScreenState extends State<ScanScreen> {
 }
 
 // ------------------------------------------------------
-// ECRÃ PARA ADICIONAR AMIGO MANUALMENTE (FALLBACK)
+// ECRÃ PARA ADICIONAR AMIGO MANUALMENTE (DEVOLVE O ID)
 // ------------------------------------------------------
 class ManualAddScreen extends StatefulWidget {
   const ManualAddScreen({super.key});
@@ -682,7 +751,7 @@ class ManualAddScreen extends StatefulWidget {
 class _ManualAddScreenState extends State<ManualAddScreen> {
   final TextEditingController _idController = TextEditingController();
 
-  void _addFriend() {
+  void _submit() {
     final id = _idController.text.trim();
     if (id.length != 76) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -690,10 +759,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Pedido enviado para: ${id.substring(0, 12)}...')),
-    );
-    Navigator.pop(context);
+    Navigator.pop(context, id);
   }
 
   @override
@@ -729,7 +795,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: _addFriend,
+              onPressed: _submit,
               icon: const Icon(Icons.check),
               label: const Text('Adicionar'),
               style: ElevatedButton.styleFrom(
