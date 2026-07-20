@@ -24,7 +24,7 @@ jobs:
 
       # Corrigir o nome do projeto ANTES de qualquer comando Flutter
       - name: Fix project name
-        run: sed -i 's/^name:.*/name: p2p_chat/' pubspec.yaml
+        run: sed -i "s/^name:.*/name: p2p_chat/" pubspec.yaml
 
       # Backup do AndroidManifest (contém as permissões)
       - name: Backup AndroidManifest
@@ -40,7 +40,7 @@ jobs:
 
       # Forçar a versão correta do NDK
       - name: Force NDK version
-        run: sed -i 's/ndkVersion = flutter.ndkVersion/ndkVersion = "27.0.12077973"/' android/app/build.gradle.kts
+        run: sed -i "s/ndkVersion = flutter.ndkVersion/ndkVersion = \"27.0.12077973\"/" android/app/build.gradle.kts
 
       # Descarregar as bibliotecas oficiais do Tox
       - name: Download and extract official Tox Android binaries
