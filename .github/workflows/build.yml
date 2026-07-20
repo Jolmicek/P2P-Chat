@@ -22,28 +22,38 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Remover cache do Gradle para evitar versões antigas do Kotlin
+      # Backup do AndroidManifest (contém permissões)
+      - name: Backup AndroidManifest
+        run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
+
+      # Apagar a pasta android (para recriar do zero)
+      - name: Remove old android folder
+        run: rm -rf android
+
+      # Recriar a plataforma Android (agora o nome é p2p_chat)
+      - name: Regenerate Android platform
+        run: flutter create --platforms android .
+
+      # Restaurar o AndroidManifest original
+      - name: Restore AndroidManifest
+        run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+
+      # Forçar versão do NDK (caso ainda apareça o aviso)
+      - name: Set correct NDK version
+        run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+
+      # Limpar cache do Gradle para evitar Kotlin antigo
       - name: Clear Gradle cache
         run: rm -rf /home/runner/.gradle/caches/
 
-      # Forçar a versão do Kotlin em todos os ficheiros de configuração
-      - name: Force Kotlin version 1.9.22 everywhere
+      # Forçar versão do Kotlin nos ficheiros de configuração
+      - name: Force Kotlin version
         run: |
-          # settings.gradle.kts
           if [ -f android/settings.gradle.kts ]; then
             sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle.kts
           fi
-          # settings.gradle (caso exista)
-          if [ -f android/settings.gradle ]; then
-            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle
-          fi
-          # build.gradle.kts (raiz)
           if [ -f android/build.gradle.kts ]; then
             sed -i 's/extra\["kotlin_version"\] = "[^"]*"/extra["kotlin_version"] = "1.9.22"/' android/build.gradle.kts
-          fi
-          # build.gradle (raiz)
-          if [ -f android/build.gradle ]; then
-            sed -i 's/ext.kotlin_version = "[^"]*"/ext.kotlin_version = "1.9.22"/' android/build.gradle
           fi
 
       # Descarregar as bibliotecas oficiais do Tox
