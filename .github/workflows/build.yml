@@ -1,4 +1,4 @@
-name: Build APK with Tox
+name: Build APK with Tox (final)
 
 on:
   push:
@@ -22,63 +22,28 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Guardar as permissões da câmara/internet antes de apagar a pasta android
-      - name: Backup AndroidManifest
-        run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
+      # Remover cache do Gradle para evitar versões antigas do Kotlin
+      - name: Clear Gradle cache
+        run: rm -rf /home/runner/.gradle/caches/
 
-      # Apagar a pasta android (vai ser recriada de seguida)
-      - name: Remove old android folder
-        run: rm -rf android
-
-      # Escrever o pubspec.yaml correto (nome p2p_chat) e guardar uma cópia
-      - name: Write correct pubspec.yaml
+      # Forçar a versão do Kotlin em todos os ficheiros de configuração
+      - name: Force Kotlin version 1.9.22 everywhere
         run: |
-          cat > pubspec.yaml << 'EOF'
-          name: p2p_chat
-          description: Chat P2P seguro com Tox
-          publish_to: 'none'
-          version: 1.0.0+1
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-          dependencies:
-            flutter:
-              sdk: flutter
-            qr_flutter: ^4.1.0
-            mobile_scanner: ^3.5.7
-            google_fonts: ^6.1.0
-            flutter_animate: ^4.2.0
-            shared_preferences: ^2.2.2
-            sqflite: ^2.3.0
-            cryptography: ^2.7.0
-            path_provider: ^2.1.2
-            ffi: ^2.1.0
-          dev_dependencies:
-            flutter_test:
-              sdk: flutter
-          flutter:
-            uses-material-design: true
-          EOF
-          cp pubspec.yaml /tmp/pubspec.yaml
-
-      # Recriar a plataforma Android com o nome forçado
-      - name: Regenerate Android platform
-        run: flutter create --project-name p2p_chat --platforms android .
-
-      # Restaurar o nosso pubspec (com dependências completas)
-      - name: Restore pubspec.yaml
-        run: cp -f /tmp/pubspec.yaml pubspec.yaml
-
-      # Restaurar as permissões da câmara e internet
-      - name: Restore AndroidManifest
-        run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-
-      # Forçar a versão correta do NDK (funciona com build.gradle.kts ou build.gradle)
-      - name: Set correct NDK version
-        run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
-          elif [ -f android/app/build.gradle ]; then
-            sed -i "s/ndkVersion flutter.ndkVersion/ndkVersion '27.0.12077973'/" android/app/build.gradle
+          # settings.gradle.kts
+          if [ -f android/settings.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle.kts
+          fi
+          # settings.gradle (caso exista)
+          if [ -f android/settings.gradle ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle
+          fi
+          # build.gradle.kts (raiz)
+          if [ -f android/build.gradle.kts ]; then
+            sed -i 's/extra\["kotlin_version"\] = "[^"]*"/extra["kotlin_version"] = "1.9.22"/' android/build.gradle.kts
+          fi
+          # build.gradle (raiz)
+          if [ -f android/build.gradle ]; then
+            sed -i 's/ext.kotlin_version = "[^"]*"/ext.kotlin_version = "1.9.22"/' android/build.gradle
           fi
 
       # Descarregar as bibliotecas oficiais do Tox
