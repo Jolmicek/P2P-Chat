@@ -22,7 +22,24 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Download and extract official Tox Android binaries
+      # Backup do AndroidManifest (contém permissões de câmara/internet)
+      - name: Backup AndroidManifest
+        run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml || true
+
+      # Regenerar a pasta Android (Gradle wrapper, etc.) com o nome já correto
+      - name: Regenerate Android platform
+        run: flutter create --platforms android .
+
+      # Restaurar as permissões originais
+      - name: Restore AndroidManifest
+        run: cp -f AndroidManifest_backup.xml android/app/src/main/AndroidManifest.xml
+
+      # Corrigir a versão do NDK no build.gradle.kts
+      - name: Set correct NDK version
+        run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+
+      # Descarregar bibliotecas oficiais do Tox
+      - name: Download Tox native libraries
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
