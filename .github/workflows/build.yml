@@ -10,14 +10,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download libtoxcore for Android
+      - name: Download libtoxcore for Android (c-toxcore)
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           mkdir -p android/app/src/main/jniLibs/x86_64
-          wget -O android/app/src/main/jniLibs/arm64-v8a/libtoxcore.so https://raw.githubusercontent.com/Antox/libtoxcore-android/master/arm64-v8a/libtoxcore.so
-          wget -O android/app/src/main/jniLibs/armeabi-v7a/libtoxcore.so https://raw.githubusercontent.com/Antox/libtoxcore-android/master/armeabi-v7a/libtoxcore.so
-          wget -O android/app/src/main/jniLibs/x86_64/libtoxcore.so https://raw.githubusercontent.com/Antox/libtoxcore-android/master/x86_64/libtoxcore.so
+          wget -O android/app/src/main/jniLibs/arm64-v8a/libtoxcore.so https://github.com/TokTok/c-toxcore/releases/download/v0.2.19/libtoxcore-android-arm64-v8a.so
+          wget -O android/app/src/main/jniLibs/armeabi-v7a/libtoxcore.so https://github.com/TokTok/c-toxcore/releases/download/v0.2.19/libtoxcore-android-armeabi-v7a.so
+          wget -O android/app/src/main/jniLibs/x86_64/libtoxcore.so https://github.com/TokTok/c-toxcore/releases/download/v0.2.19/libtoxcore-android-x86_64.so
 
       - name: Setup Java
         uses: actions/setup-java@v4
