@@ -1,20 +1,13 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'package:cryptography/cryptography.dart';
-import 'package:ffi/ffi.dart';
-import 'dart:ffi';
-import 'dart:isolate';
-import 'dart:io';
+import 'services/crypto_service.dart';
+import 'services/storage_service.dart';
+import 'services/tox_service.dart';
 
 // ------------------------------------------------------
-// MODELOS
+// MODELOS (mantêm‑se os mesmos)
 // ------------------------------------------------------
 class Contact {
   final String id;        // Tox ID (76 caracteres hex)
@@ -77,153 +70,12 @@ class Message {
 }
 
 // ------------------------------------------------------
-// SERVIÇO DE CRIPTOGRAFIA LOCAL (adiciona à tua classe CryptoService existente)
-// Para simplificar, vou colocar aqui a classe completa, mas no teu projeto manténs o ficheiro `crypto_service.dart` e acrescentas os métodos novos.
-// ------------------------------------------------------
-class CryptoService {
-  static final CryptoService _instance = CryptoService._internal();
-  factory CryptoService() => _instance;
-  CryptoService._internal();
-
-  late SimpleKeyPair _myKeyPair;
-  late SimplePublicKey _myPublicKey;
-  late SecretKey _localKey; // Para encriptar a BD local
-  bool _initialized = false;
-  final Map<String, SimplePublicKey> _friendPublicKeys = {};
-
-  Future<void> init() async {
-    if (_initialized) return;
-    final prefs = await SharedPreferences.getInstance();
-
-    // Par de chaves para Tox (ou para E2E futura)
-    final savedPriv = prefs.getString('my_private_key');
-    final algorithm = X25519();
-    if (savedPriv != null) {
-      final privKey = SimpleKeyPairData(
-        Uint8List.fromList(base64Decode(savedPriv)),
-        type: KeyPairType.x25519,
-      );
-      _myKeyPair = SimpleKeyPair(privKey, publicKey: await algorithm.extractPublicKey(privKey));
-    } else {
-      _myKeyPair = await algorithm.newKeyPair();
-      await prefs.setString('my_private_key', base64Encode(await _myKeyPair.extractPrivateKeyBytes()));
-    }
-    _myPublicKey = await _myKeyPair.extractPublicKey();
-
-    // Chave local para encriptar a base de dados
-    final savedLocalKey = prefs.getString('local_key');
-    if (savedLocalKey != null) {
-      _localKey = SecretKey(base64Decode(savedLocalKey));
-    } else {
-      _localKey = await AesGcm.with256bits().newSecretKey();
-      await prefs.setString('local_key', base64Encode(await _localKey.extractBytes()));
-    }
-
-    _initialized = true;
-  }
-
-  String get publicKeyBase64 => base64Encode(_myPublicKey.bytes);
-
-  void addFriendPublicKey(String friendId, String pubKeyBase64) {
-    _friendPublicKeys[friendId] = SimplePublicKey(
-      Uint8List.fromList(base64Decode(pubKeyBase64)),
-      type: KeyPairType.x25519,
-    );
-  }
-
-  // Encriptar dados para a base de dados local
-  Future<String> encryptData(String plainText) async {
-    final cipher = AesGcm.with256bits();
-    final secretBox = await cipher.encrypt(utf8.encode(plainText), secretKey: _localKey);
-    final payload = {
-      'ciphertext': base64Encode(secretBox.cipherText),
-      'nonce': base64Encode(secretBox.nonce),
-      'mac': base64Encode(secretBox.mac.bytes),
-    };
-    return base64Encode(utf8.encode(jsonEncode(payload)));
-  }
-
-  // Decifrar dados da base de dados local
-  Future<String> decryptData(String encryptedPayload) async {
-    final payloadMap = jsonDecode(utf8.decode(base64Decode(encryptedPayload)));
-    final secretBox = SecretBox(
-      base64Decode(payloadMap['ciphertext']),
-      nonce: base64Decode(payloadMap['nonce']),
-      mac: Mac(base64Decode(payloadMap['mac'])),
-    );
-    final cipher = AesGcm.with256bits();
-    final decrypted = await cipher.decrypt(secretBox, secretKey: _localKey);
-    return utf8.decode(decrypted);
-  }
-}
-
-// ------------------------------------------------------
-// SERVIÇO DE ARMAZENAMENTO (SQLite normal + encriptação manual)
-// ------------------------------------------------------
-class StorageService {
-  static Database? _db;
-
-  static Future<Database> _getDb() async {
-    if (_db != null) return _db!;
-    final dbPath = await getDatabasesPath();
-    _db = await openDatabase(
-      join(dbPath, 'p2pchat.db'),
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('CREATE TABLE contacts(id TEXT PRIMARY KEY, data TEXT)');
-      },
-    );
-    return _db!;
-  }
-
-  static Future<List<Contact>> loadContacts() async {
-    final db = await _getDb();
-    final rows = await db.query('contacts');
-    final crypto = CryptoService();
-    final contacts = <Contact>[];
-    for (final row in rows) {
-      try {
-        final decrypted = await crypto.decryptData(row['data'] as String);
-        final json = jsonDecode(decrypted);
-        contacts.add(Contact.fromJson(json));
-      } catch (_) {
-        // ignora entradas corrompidas
-      }
-    }
-    return contacts;
-  }
-
-  static Future<void> saveContacts(List<Contact> contacts) async {
-    final db = await _getDb();
-    final crypto = CryptoService();
-    await db.transaction((txn) async {
-      await txn.delete('contacts');
-      for (final c in contacts) {
-        final json = jsonEncode(c.toJson());
-        final encrypted = await crypto.encryptData(json);
-        await txn.insert('contacts', {
-          'id': c.id,
-          'data': encrypted,
-        });
-      }
-    });
-  }
-}
-
-// ------------------------------------------------------
-// SERVIÇO TOX (mantém o teu ficheiro `tox_service.dart`; aqui vai uma versão simplificada que carrega a libtoxcore.so real)
-// Atenção: No teu projeto, manténs o ficheiro `tox_service.dart` que já tinhas, não precisas de copiar esta parte para o main.dart.
-// Coloco aqui apenas para referência, mas o main.dart importa 'services/tox_service.dart'.
-// ------------------------------------------------------
-// ... (não vou repetir o ToxService, ele está no ficheiro services/tox_service.dart)
-
-// ------------------------------------------------------
 // APP PRINCIPAL
 // ------------------------------------------------------
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Inicializa os serviços
   await CryptoService().init();
-  // Inicializar Tox (se ainda não estiver)
   try {
     await ToxService().init();
   } catch (e) {
@@ -303,11 +155,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
   void initState() {
     super.initState();
     _loadContacts();
-    // Subscrever eventos do Tox para atualizar mensagens (opcional)
+    // Ouvir eventos do Tox (mensagens recebidas)
     ToxService().events.listen((event) {
       if (event is ToxMessageEvent) {
-        // Atualizar contacto correspondente
-        // ...
+        // Atualiza o contacto correspondente
+        setState(() {
+          // ... lógica para adicionar a mensagem recebida
+        });
       }
     });
   }
