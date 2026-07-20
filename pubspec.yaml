@@ -16,6 +16,7 @@ dependencies:
   flutter_animate: ^4.2.0
   shared_preferences: ^2.2.2
   sqflite_sqlcipher: ^3.2.0    # versão atualizada
+  cryptography: ^2.7.0     # Já devias ter
 
 dev_dependencies:
   flutter_test:
