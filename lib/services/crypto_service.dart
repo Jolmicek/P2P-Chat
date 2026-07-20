@@ -26,7 +26,7 @@ class CryptoService {
       final privBytes = base64Decode(savedPriv);
       // Usar o construtor correto da versão 2.9.0
       final algorithm = X25519();
-      _myKeyPair = await algorithm.newKeyPairFromSeed(SecretKey(privBytes));
+      _myKeyPair = await algorithm.newKeyPairFromSeed(privBytes);
     } else {
       _myKeyPair = await X25519().newKeyPair();
       final privBytes = await _myKeyPair.extractPrivateKeyBytes();
