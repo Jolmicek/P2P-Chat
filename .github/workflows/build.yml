@@ -1,4 +1,4 @@
-name: Build APK with Tox (self-contained)
+name: Build APK
 
 on:
   push:
@@ -9,102 +9,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25c
-
-      # ---- Compilar libsodium (apenas arm64-v8a e x86_64) ----
-      - name: Checkout libsodium
-        uses: actions/checkout@v4
-        with:
-          repository: jedisct1/libsodium
-          path: libsodium
-          ref: 1.0.19
-
-      - name: Build libsodium for arm64-v8a (API 21)
-        run: |
-          cd libsodium
-          ./autogen.sh
-          bash ./dist-build/android-armv8-a.sh
-          mkdir -p ../android/app/src/main/jniLibs/arm64-v8a
-          cp libsodium-android-armv8-a*/lib/libsodium.so ../android/app/src/main/jniLibs/arm64-v8a/
-
-      - name: Build libsodium for x86_64 (API 21)
-        run: |
-          cd libsodium
-          bash ./dist-build/android-x86_64.sh
-          mkdir -p ../android/app/src/main/jniLibs/x86_64
-          cp libsodium-android-x86_64*/lib/libsodium.so ../android/app/src/main/jniLibs/x86_64/
-
-      # ---- Compilar c-toxcore (apenas para as mesmas arquiteturas) ----
-      - name: Checkout c-toxcore
-        uses: actions/checkout@v4
-        with:
-          repository: TokTok/c-toxcore
-          path: c-toxcore
-          ref: v0.2.19
-
-      - name: Build c-toxcore for arm64-v8a
-        run: |
-          cd c-toxcore
-          mkdir build_android && cd build_android
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_SHARED=ON \
-            -DBUILD_TOXAV=OFF \
-            -DBUILD_TESTING=OFF \
-            -DSODIUM_LIBRARY=$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/libsodium.so \
-            -DSODIUM_INCLUDE_DIR=$GITHUB_WORKSPACE/libsodium/src/libsodium/include
-          cmake --build . --target toxcore -- -j$(nproc)
-          cp lib/libtoxcore.so $GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/libtoxcore.so
-
-      - name: Build c-toxcore for x86_64
-        run: |
-          cd c-toxcore
-          rm -rf build_android
-          mkdir build_android && cd build_android
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=x86_64 \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_SHARED=ON \
-            -DBUILD_TOXAV=OFF \
-            -DBUILD_TESTING=OFF \
-            -DSODIUM_LIBRARY=$GITHUB_WORKSPACE/android/app/src/main/jniLibs/x86_64/libsodium.so \
-            -DSODIUM_INCLUDE_DIR=$GITHUB_WORKSPACE/libsodium/src/libsodium/include
-          cmake --build . --target toxcore -- -j$(nproc)
-          cp lib/libtoxcore.so $GITHUB_WORKSPACE/android/app/src/main/jniLibs/x86_64/libtoxcore.so
-
-      # ---- Resto da compilação Flutter ----
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
-
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Build APK
-        run: flutter build apk --release
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
         with:
-          name: p2p-chat-tox-apk
+          name: p2p-chat-apk
           path: build/app/outputs/flutter-apk/app-release.apk
