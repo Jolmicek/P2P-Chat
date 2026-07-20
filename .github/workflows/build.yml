@@ -22,15 +22,15 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Usar o pubspec correto (nome p2p_chat)
-      - name: Apply correct pubspec
-        run: cp pubspec_fix.yaml pubspec.yaml
+      # Corrigir o nome do projeto ANTES de qualquer comando Flutter
+      - name: Fix project name
+        run: sed -i 's/^name:.*/name: p2p_chat/' pubspec.yaml
 
-      # Backup do AndroidManifest (com permissões)
+      # Backup do AndroidManifest (contém as permissões)
       - name: Backup AndroidManifest
-        run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml
+        run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml || true
 
-      # Regenerar a estrutura Android (corrige problemas de Gradle)
+      # Regenerar a estrutura Android com o nome correto
       - name: Regenerate Android platform
         run: flutter create --platforms android .
 
