@@ -22,37 +22,46 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # ============================================================
-      # PASSO CRÍTICO: corrigir o nome do projeto no pubspec.yaml
-      # ============================================================
-      - name: Fix project name in pubspec.yaml
-        run: sed -i 's/^name:.*/name: p2p_chat/' pubspec.yaml
+      # Corrigir o nome do projeto no pubspec.yaml (sem usar aspas que quebrem o YAML)
+      - name: Fix project name
+        run: |
+          sed -i 's/^name:.*/name: p2p_chat/' pubspec.yaml
+        shell: bash
 
-      # Backup do AndroidManifest (com permissões)
+      # Backup do AndroidManifest (permissoes)
       - name: Backup AndroidManifest
-        run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
+        run: |
+          cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
+        shell: bash
 
-      # Apagar a pasta android (será recriada)
+      # Remover pasta android existente
       - name: Remove old android folder
         run: rm -rf android
+        shell: bash
 
-      # Recriar a plataforma Android (agora o nome é p2p_chat)
+      # Recriar a plataforma Android (com nome correto)
       - name: Regenerate Android platform
         run: flutter create --platforms android .
+        shell: bash
 
-      # Restaurar o AndroidManifest original (com permissões)
+      # Restaurar o AndroidManifest com permissões
       - name: Restore AndroidManifest
-        run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+        run: |
+          cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+        shell: bash
 
-      # Forçar versão do NDK
+      # Forçar a versão do NDK
       - name: Set correct NDK version
-        run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+        run: |
+          sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+        shell: bash
 
-      # Limpar cache do Gradle (elimina Kotlin antigo)
+      # Limpar cache do Gradle para eliminar Kotlin antigo
       - name: Clear Gradle cache
         run: rm -rf /home/runner/.gradle/caches/
+        shell: bash
 
-      # Forçar Kotlin 1.9.22 em todos os ficheiros relevantes
+      # Forçar Kotlin 1.9.22 em todos os ficheiros
       - name: Force Kotlin version
         run: |
           if [ -f android/settings.gradle.kts ]; then
@@ -61,12 +70,7 @@ jobs:
           if [ -f android/build.gradle.kts ]; then
             sed -i 's/extra\["kotlin_version"\] = "[^"]*"/extra["kotlin_version"] = "1.9.22"/' android/build.gradle.kts
           fi
-          if [ -f android/settings.gradle ]; then
-            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle
-          fi
-          if [ -f android/build.gradle ]; then
-            sed -i 's/ext.kotlin_version = "[^"]*"/ext.kotlin_version = "1.9.22"/' android/build.gradle
-          fi
+        shell: bash
 
       # Descarregar as bibliotecas oficiais do Tox
       - name: Download Tox native libraries
@@ -80,15 +84,19 @@ jobs:
           tar -xzf toxcore-v0.2.23-android-armeabi-v7a.tar.gz -C android/app/src/main/jniLibs/armeabi-v7a --strip-components=1
           wget -q https://github.com/TokTok/c-toxcore/releases/download/v0.2.23/toxcore-v0.2.23-android-x86_64.tar.gz
           tar -xzf toxcore-v0.2.23-android-x86_64.tar.gz -C android/app/src/main/jniLibs/x86_64 --strip-components=1
+        shell: bash
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        shell: bash
 
       - name: Install dependencies
         run: flutter pub get
+        shell: bash
 
       - name: Build APK
         run: flutter build apk --release
+        shell: bash
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
