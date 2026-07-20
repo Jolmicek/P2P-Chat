@@ -10,6 +10,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Regenerate Android platform (fix Gradle)
+        run: |
+          flutter create --platforms android .
+          # Corrigir a versão do NDK no ficheiro gerado
+          sed -i 's/ndkVersion = flutter.ndkVersion/ndkVersion = "27.0.12077973"/' android/app/build.gradle.kts
+
       - name: Download and extract official Tox Android binaries
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
@@ -27,18 +45,6 @@ jobs:
           # x86_64
           wget -q https://github.com/TokTok/c-toxcore/releases/download/v0.2.23/toxcore-v0.2.23-android-x86_64.tar.gz
           tar -xzf toxcore-v0.2.23-android-x86_64.tar.gz -C android/app/src/main/jniLibs/x86_64 --strip-components=1
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
