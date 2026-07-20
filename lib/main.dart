@@ -4,18 +4,21 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/tox_service.dart';
 
 // ------------------------------------------------------
-// MODELOS SIMPLES
+// MODELOS
 // ------------------------------------------------------
 class Contact {
-  final String id;      // Tox ID
-  String name;          // Nome visível (pode ser derivado do ID)
+  final String id;        // Tox ID
+  String name;
+  int friendNumber;       // Número interno do Tox
   List<Message> messages;
 
   Contact({
     required this.id,
     required this.name,
+    this.friendNumber = -1,
     List<Message>? messages,
   }) : messages = messages ?? [];
 
@@ -26,22 +29,20 @@ class Contact {
 
   String get lastTime {
     if (messages.isEmpty) return '';
-    final time = messages.last.time;
-    // Formata só a hora
-    return time; // Já guardamos como HH:mm
+    return messages.last.time;
   }
-
-  int get unreadCount => 0; // Placeholder até implementares notificações
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'friendNumber': friendNumber,
         'messages': messages.map((m) => m.toJson()).toList(),
       };
 
   factory Contact.fromJson(Map<String, dynamic> json) => Contact(
         id: json['id'],
         name: json['name'],
+        friendNumber: json['friendNumber'] ?? -1,
         messages: (json['messages'] as List)
             .map((m) => Message.fromJson(m))
             .toList(),
@@ -69,7 +70,7 @@ class Message {
 }
 
 // ------------------------------------------------------
-// SERVIÇO DE ARMAZENAMENTO LOCAL
+// ARMAZENAMENTO LOCAL
 // ------------------------------------------------------
 class StorageService {
   static const _contactsKey = 'contacts';
@@ -92,7 +93,11 @@ class StorageService {
 // ------------------------------------------------------
 // APP PRINCIPAL
 // ------------------------------------------------------
-void main() => runApp(const P2PChatApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ToxService().init();
+  runApp(const P2PChatApp());
+}
 
 class P2PChatApp extends StatelessWidget {
   const P2PChatApp({super.key});
@@ -148,7 +153,7 @@ class SettingsScreen extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ PRINCIPAL: LISTA DE CONVERSAS (COM DADOS REAIS)
+// LISTA DE CONVERSAS
 // ------------------------------------------------------
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -160,11 +165,19 @@ class ContactsScreen extends StatefulWidget {
 class _ContactsScreenState extends State<ContactsScreen> {
   List<Contact> contacts = [];
   String _searchQuery = '';
+  late StreamSubscription<ToxEvent> _toxSub;
 
   @override
   void initState() {
     super.initState();
     _loadContacts();
+    _toxSub = ToxService().events.listen(_onToxEvent);
+  }
+
+  @override
+  void dispose() {
+    _toxSub.cancel();
+    super.dispose();
   }
 
   Future<void> _loadContacts() async {
@@ -175,17 +188,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
   List<Contact> get filteredContacts =>
       contacts.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
-  void _addNewContact(String id) {
-    if (contacts.any((c) => c.id == id)) {
+  void _addNewContact(String address) {
+    if (contacts.any((c) => c.id == address)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Este contacto já existe.')),
       );
       return;
     }
-    final name = 'Amigo ${contacts.length + 1}'; // Nome provisório
-    setState(() {
-      contacts.add(Contact(id: id, name: name));
-    });
+    final tox = ToxService();
+    final friendNum = tox.addFriend(address, 'Olá, adiciona-me!');
+    final name = 'Amigo ${contacts.length + 1}';
+    final newContact = Contact(id: address, name: name, friendNumber: friendNum);
+    setState(() => contacts.add(newContact));
     StorageService.saveContacts(contacts);
   }
 
@@ -195,6 +209,29 @@ class _ContactsScreenState extends State<ContactsScreen> {
       if (index != -1) contacts[index] = updated;
     });
     StorageService.saveContacts(contacts);
+  }
+
+  void _onToxEvent(ToxEvent event) {
+    if (event is ToxFriendRequestEvent) {
+      // Exemplo: aceitar automaticamente (podemos mostrar diálogo)
+      ToxService().acceptFriend(event.friendNumber);
+      // Adicionar contacto se não existir (aqui simplificamos)
+    } else if (event is ToxMessageEvent) {
+      final msg = Message(
+        text: event.message,
+        isMe: false,
+        time: '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+      );
+      // Encontrar contacto pelo friendNumber
+      final contact = contacts.firstWhere((c) => c.friendNumber == event.friendNumber,
+          orElse: () => Contact(id: '', name: '', friendNumber: -1));
+      if (contact.id.isNotEmpty) {
+        setState(() {
+          contact.messages.add(msg);
+        });
+        StorageService.saveContacts(contacts);
+      }
+    }
   }
 
   @override
@@ -233,7 +270,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   break;
                 case 'connection':
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Ligação Tox ativa (simulada)')),
+                    const SnackBar(content: Text('Ligação Tox ativa. ID: ${ToxService().ownAddress ?? "..."}')),
                   );
                   break;
               }
@@ -345,7 +382,7 @@ class _ContactTile extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ DE CHAT (COM PERSISTÊNCIA)
+// ECRÃ DE CHAT
 // ------------------------------------------------------
 class ChatScreen extends StatefulWidget {
   final Contact contact;
@@ -376,13 +413,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final now = DateTime.now();
     final timeStr = _formatTime(now);
 
-    setState(() {
-      messages.add(Message(text: text, isMe: true, time: timeStr));
-    });
+    // Enviar via Tox
+    if (widget.contact.friendNumber >= 0) {
+      ToxService().sendMessage(widget.contact.friendNumber, text);
+    }
 
-    // Atualiza o contacto com as mensagens mais recentes
+    final msg = Message(text: text, isMe: true, time: timeStr);
+    setState(() {
+      messages.add(msg);
+    });
     widget.contact.messages = List.from(messages);
-    // Não é necessário guardar já aqui, será feito quando voltar à ContactsScreen
     _messageController.clear();
   }
 
@@ -393,7 +433,6 @@ class _ChatScreenState extends State<ChatScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
           onPressed: () {
-            // Devolve o contacto atualizado
             Navigator.pop(context, widget.contact);
           },
         ),
@@ -507,7 +546,7 @@ class IdScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const myToxId = 'd0c4e1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'; // Substitui pelo teu ID real quando houver
+    final myToxId = ToxService().ownAddress ?? 'A aguardar ligação...';
 
     return Scaffold(
       appBar: AppBar(
@@ -523,34 +562,37 @@ class IdScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFF6C63FF), width: 2),
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6C63FF).withOpacity(0.3),
-                      blurRadius: 20,
-                      spreadRadius: 5,
+              if (myToxId.length == 76)
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFF6C63FF), width: 2),
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6C63FF).withOpacity(0.3),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(16),
+                  child: QrImageView(
+                    data: myToxId,
+                    size: 200,
+                    backgroundColor: Colors.white,
+                    eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.circle,
+                      color: Color(0xFF6C63FF),
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(16),
-                child: QrImageView(
-                  data: myToxId,
-                  size: 200,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.circle,
-                    color: Color(0xFF6C63FF),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Colors.black87,
+                    ),
                   ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
+                )
+              else
+                const CircularProgressIndicator(color: Color(0xFF6C63FF)),
               const SizedBox(height: 24),
               Container(
                 width: double.infinity,
@@ -591,12 +633,8 @@ class IdScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => const ScanScreen()),
                       );
-                      if (result is String && result.length == 76) {
-                        // Podias adicionar aqui, mas vamos delegar à ContactsScreen
-                        if (context.mounted) {
-                          Navigator.pop(context); // Volta para ContactsScreen que trata da adição
-                          // Alternativa: usar callback, mas assim simplifica
-                        }
+                      if (result is String && result.length == 76 && context.mounted) {
+                        Navigator.pop(context, result);
                       }
                     },
                   ),
@@ -609,7 +647,7 @@ class IdScreen extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const ManualAddScreen()),
                       );
                       if (result is String && result.length == 76 && context.mounted) {
-                        Navigator.pop(context); // Volta
+                        Navigator.pop(context, result);
                       }
                     },
                   ),
@@ -658,7 +696,7 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ------------------------------------------------------
-// ECRÃ DE SCANNER DE QR (DEVOLVE O ID LIDO)
+// SCANNER
 // ------------------------------------------------------
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -690,7 +728,6 @@ class _ScanScreenState extends State<ScanScreen> {
       final code = barcode!.rawValue!;
       if (code.length == 76) {
         setState(() => _scanned = true);
-        // Devolve o ID para a tela anterior
         Navigator.pop(context, code);
       }
     }
@@ -739,7 +776,7 @@ class _ScanScreenState extends State<ScanScreen> {
 }
 
 // ------------------------------------------------------
-// ECRÃ PARA ADICIONAR AMIGO MANUALMENTE (DEVOLVE O ID)
+// ADICIONAR MANUALMENTE
 // ------------------------------------------------------
 class ManualAddScreen extends StatefulWidget {
   const ManualAddScreen({super.key});
