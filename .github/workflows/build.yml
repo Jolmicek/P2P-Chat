@@ -1,23 +1,38 @@
-name: p2p_chat
-description: Chat P2P seguro
+name: Build APK
 
-publish_to: 'none'
-version: 1.0.0+1
+on:
+  push:
+    branches: [ main ]
 
-environment:
-  sdk: ^3.5.0
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-dependencies:
-  flutter:
-    sdk: flutter
-  qr_flutter: ^4.1.0
-  mobile_scanner: ^3.5.7
-  google_fonts: ^6.1.0
-  flutter_animate: ^4.2.0
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
 
-flutter:
-  uses-material-design: true
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2p-chat-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
