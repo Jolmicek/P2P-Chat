@@ -22,19 +22,48 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      # Backup do AndroidManifest (com permissões)
+      # Escrever pubspec.yaml correto e limpar .metadata
+      - name: Write correct pubspec.yaml and remove old .metadata
+        run: |
+          cat > pubspec.yaml << 'EOF'
+          name: p2p_chat
+          description: Chat P2P seguro com Tox
+          publish_to: 'none'
+          version: 1.0.0+1
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+          dependencies:
+            flutter:
+              sdk: flutter
+            qr_flutter: ^4.1.0
+            mobile_scanner: ^3.5.7
+            google_fonts: ^6.1.0
+            flutter_animate: ^4.2.0
+            shared_preferences: ^2.2.2
+            sqflite: ^2.3.0
+            cryptography: ^2.7.0
+            path_provider: ^2.1.2
+            ffi: ^2.1.0
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+          flutter:
+            uses-material-design: true
+          EOF
+          rm -f .metadata
+        shell: bash
+
+      # Backup do AndroidManifest (permissões)
       - name: Backup AndroidManifest
         run: cp android/app/src/main/AndroidManifest.xml /tmp/AndroidManifest.xml || true
         shell: bash
 
-      # Remover pasta android e .metadata antigos
-      - name: Remove old android folder and metadata
-        run: |
-          rm -rf android
-          rm -f .metadata
+      # Remover pasta android existente
+      - name: Remove old android folder
+        run: rm -rf android
         shell: bash
 
-      # Recriar a plataforma Android FORÇANDO o nome p2p_chat
+      # Recriar a plataforma Android forçando o nome p2p_chat
       - name: Regenerate Android platform
         run: flutter create --project-name p2p_chat --platforms android .
         shell: bash
@@ -44,9 +73,14 @@ jobs:
         run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
         shell: bash
 
-      # Forçar a versão do NDK
+      # Corrigir NDK (suporta build.gradle.kts ou build.gradle)
       - name: Set correct NDK version
-        run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            sed -i 's|ndkVersion flutter.ndkVersion|ndkVersion "27.0.12077973"|' android/app/build.gradle
+          fi
         shell: bash
 
       # Limpar cache do Gradle (Kotlin antigo)
@@ -54,14 +88,20 @@ jobs:
         run: rm -rf /home/runner/.gradle/caches/
         shell: bash
 
-      # Forçar Kotlin 1.9.22 nos ficheiros de configuração
+      # Forçar Kotlin 1.9.22 em todos os ficheiros de configuração
       - name: Force Kotlin version
         run: |
           if [ -f android/settings.gradle.kts ]; then
             sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle.kts
           fi
+          if [ -f android/settings.gradle ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.22"/' android/settings.gradle
+          fi
           if [ -f android/build.gradle.kts ]; then
             sed -i 's/extra\["kotlin_version"\] = "[^"]*"/extra["kotlin_version"] = "1.9.22"/' android/build.gradle.kts
+          fi
+          if [ -f android/build.gradle ]; then
+            sed -i 's/ext.kotlin_version = "[^"]*"/ext.kotlin_version = "1.9.22"/' android/build.gradle
           fi
         shell: bash
 
