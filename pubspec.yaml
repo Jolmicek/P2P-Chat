@@ -1,11 +1,11 @@
 name: p2p_chat
-description: Chat P2P seguro
+description: Chat P2P seguro com encriptação ponta a ponta
 
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.0
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -16,6 +16,7 @@ dependencies:
   flutter_animate: ^4.2.0
   shared_preferences: ^2.2.2
   toxcore_ffi: ^0.2.12
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
