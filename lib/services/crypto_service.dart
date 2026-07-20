@@ -19,26 +19,37 @@ class CryptoService {
     if (_initialized) return;
     final prefs = await SharedPreferences.getInstance();
 
-    // Par de chaves X25519
-    final savedPriv = prefs.getString('my_private_key');
+    // 1. Par de chaves X25519 (guardamos a privada e a pública juntas)
+    final savedKeyData = prefs.getString('my_key_pair');
 
-    if (savedPriv != null) {
-      // Carregar chave existente a partir dos bytes privados
-      final privBytes = base64Decode(savedPriv);
-      _myKeyPair = await SimpleKeyPair.fromPrivateKeyBytes(
-        privBytes,
-        type: KeyPairType.x25519,
+    if (savedKeyData != null) {
+      // Recuperar o par guardado
+      final json = jsonDecode(savedKeyData);
+      final privBytes = base64Decode(json['privateKey']);
+      final pubBytes = base64Decode(json['publicKey']);
+
+      _myPublicKey = SimplePublicKey(pubBytes, type: KeyPairType.x25519);
+      final keyPairData = SimpleKeyPairData(
+        bytes: privBytes,
+        publicKey: _myPublicKey,
       );
+      _myKeyPair = SimpleKeyPair(keyPairData, publicKey: _myPublicKey);
     } else {
-      // Gerar novo par de chaves
+      // Gerar um novo par e guardar
       _myKeyPair = await X25519().newKeyPair();
+      _myPublicKey = await _myKeyPair.extractPublicKey();
+
       final privBytes = await _myKeyPair.extractPrivateKeyBytes();
-      await prefs.setString('my_private_key', base64Encode(privBytes));
+      final pubBytes = _myPublicKey.bytes;
+
+      final json = jsonEncode({
+        'privateKey': base64Encode(privBytes),
+        'publicKey': base64Encode(pubBytes),
+      });
+      await prefs.setString('my_key_pair', json);
     }
 
-    _myPublicKey = await _myKeyPair.extractPublicKey();
-
-    // Chave local para encriptar a base de dados (AES-256)
+    // 2. Chave local para a base de dados (AES‑256)
     final savedLocalKey = prefs.getString('local_key');
     if (savedLocalKey != null) {
       _localKey = SecretKey(base64Decode(savedLocalKey));
@@ -50,8 +61,10 @@ class CryptoService {
     _initialized = true;
   }
 
+  /// Chave pública (base64) para partilhar com amigos.
   String get publicKeyBase64 => base64Encode(_myPublicKey.bytes);
 
+  /// Adiciona a chave pública de um amigo (recebida por QR/link).
   void addFriendPublicKey(String friendId, String pubKeyBase64) {
     _friendPublicKeys[friendId] = SimplePublicKey(
       base64Decode(pubKeyBase64),
@@ -59,6 +72,7 @@ class CryptoService {
     );
   }
 
+  /// Encripta uma mensagem para um amigo específico.
   Future<String> encryptMessage(String friendId, String plainText) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
@@ -81,6 +95,7 @@ class CryptoService {
     return base64Encode(utf8.encode(jsonEncode(payload)));
   }
 
+  /// Decifra uma mensagem recebida de um amigo.
   Future<String> decryptMessage(String friendId, String encryptedPayload) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
@@ -101,7 +116,11 @@ class CryptoService {
     return utf8.decode(decrypted);
   }
 
-  // Encriptação local (BD)
+  // ------------------------------------------------------
+  // Encriptação para a base de dados local
+  // ------------------------------------------------------
+
+  /// Encripta uma string para armazenamento local (usa _localKey).
   Future<String> encryptData(String plainText) async {
     final secretBox = await AesGcm.with256bits().encrypt(
       utf8.encode(plainText),
@@ -116,6 +135,7 @@ class CryptoService {
     return base64Encode(utf8.encode(jsonEncode(payload)));
   }
 
+  /// Decifra uma string que foi encriptada com [encryptData].
   Future<String> decryptData(String encryptedPayload) async {
     final payloadMap = jsonDecode(utf8.decode(base64Decode(encryptedPayload)));
     final secretBox = SecretBox(
