@@ -8,14 +8,18 @@ class CryptoService {
   factory CryptoService() => _instance;
   CryptoService._internal();
 
-  late final SimpleKeyPair _myKeyPair;
-  late final SimplePublicKey _myPublicKey;
+  late SimpleKeyPair _myKeyPair;
+  late SimplePublicKey _myPublicKey;
+  late SecretKey _localKey;
   bool _initialized = false;
+
   final Map<String, SimplePublicKey> _friendPublicKeys = {};
 
   Future<void> init() async {
     if (_initialized) return;
     final prefs = await SharedPreferences.getInstance();
+
+    // Par de chaves para troca de chaves (X25519)
     final savedPriv = prefs.getString('my_private_key');
     final algorithm = X25519();
 
@@ -30,11 +34,23 @@ class CryptoService {
       await prefs.setString('my_private_key', base64Encode(await _myKeyPair.extractPrivateKeyBytes()));
     }
     _myPublicKey = await _myKeyPair.extractPublicKey();
+
+    // Chave local para encriptar a base de dados (AES-256)
+    final savedLocalKey = prefs.getString('local_key');
+    if (savedLocalKey != null) {
+      _localKey = SecretKey(base64Decode(savedLocalKey));
+    } else {
+      _localKey = await AesGcm.with256bits().newSecretKey();
+      await prefs.setString('local_key', base64Encode(await _localKey.extractBytes()));
+    }
+
     _initialized = true;
   }
 
+  /// Chave pública (base64) para partilhar com amigos.
   String get publicKeyBase64 => base64Encode(_myPublicKey.bytes);
 
+  /// Adiciona a chave pública de um amigo (recebida por QR/link).
   void addFriendPublicKey(String friendId, String pubKeyBase64) {
     _friendPublicKeys[friendId] = SimplePublicKey(
       Uint8List.fromList(base64Decode(pubKeyBase64)),
@@ -42,6 +58,7 @@ class CryptoService {
     );
   }
 
+  /// Encripta uma mensagem para um amigo específico.
   Future<String> encryptMessage(String friendId, String plainText) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
@@ -66,6 +83,7 @@ class CryptoService {
     return base64Encode(utf8.encode(jsonEncode(payload)));
   }
 
+  /// Decifra uma mensagem recebida de um amigo.
   Future<String> decryptMessage(String friendId, String encryptedPayload) async {
     final recipientPublicKey = _friendPublicKeys[friendId];
     if (recipientPublicKey == null) throw Exception('Chave pública do amigo não encontrada');
@@ -85,6 +103,40 @@ class CryptoService {
 
     final cipher = AesGcm.with256bits();
     final decrypted = await cipher.decrypt(secretBox, secretKey: sharedSecret);
+    return utf8.decode(decrypted);
+  }
+
+  // ------------------------------------------------------
+  // Encriptação para a base de dados local
+  // ------------------------------------------------------
+
+  /// Encripta uma string para armazenamento local (usa _localKey).
+  Future<String> encryptData(String plainText) async {
+    final cipher = AesGcm.with256bits();
+    final secretBox = await cipher.encrypt(
+      utf8.encode(plainText),
+      secretKey: _localKey,
+    );
+
+    final payload = {
+      'ciphertext': base64Encode(secretBox.cipherText),
+      'nonce': base64Encode(secretBox.nonce),
+      'mac': base64Encode(secretBox.mac.bytes),
+    };
+    return base64Encode(utf8.encode(jsonEncode(payload)));
+  }
+
+  /// Decifra uma string que foi encriptada com [encryptData].
+  Future<String> decryptData(String encryptedPayload) async {
+    final payloadMap = jsonDecode(utf8.decode(base64Decode(encryptedPayload)));
+    final secretBox = SecretBox(
+      base64Decode(payloadMap['ciphertext']),
+      nonce: base64Decode(payloadMap['nonce']),
+      mac: Mac(base64Decode(payloadMap['mac'])),
+    );
+
+    final cipher = AesGcm.with256bits();
+    final decrypted = await cipher.decrypt(secretBox, secretKey: _localKey);
     return utf8.decode(decrypted);
   }
 }
