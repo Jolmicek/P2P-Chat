@@ -30,7 +30,7 @@ jobs:
       - name: Remove old android folder
         run: rm -rf android
 
-      # Escrever o pubspec.yaml correto (nome p2p_chat) – sem depender de ficheiros extra
+      # Escrever o pubspec.yaml correto (nome p2p_chat) e guardar uma cópia
       - name: Write correct pubspec.yaml
         run: |
           cat > pubspec.yaml << 'EOF'
@@ -58,10 +58,15 @@ jobs:
           flutter:
             uses-material-design: true
           EOF
+          cp pubspec.yaml /tmp/pubspec.yaml
 
-      # Recriar a plataforma Android (agora o nome é válido e a pasta está limpa)
+      # Recriar a plataforma Android com o nome forçado
       - name: Regenerate Android platform
-        run: flutter create --platforms android .
+        run: flutter create --project-name p2p_chat --platforms android .
+
+      # Restaurar o nosso pubspec (com dependências completas)
+      - name: Restore pubspec.yaml
+        run: cp -f /tmp/pubspec.yaml pubspec.yaml
 
       # Restaurar as permissões da câmara e internet
       - name: Restore AndroidManifest
