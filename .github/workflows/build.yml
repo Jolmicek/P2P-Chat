@@ -72,9 +72,14 @@ jobs:
       - name: Restore AndroidManifest
         run: cp -f /tmp/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
-      # Forçar a versão correta do NDK
+      # Forçar a versão correta do NDK (funciona com build.gradle.kts ou build.gradle)
       - name: Set correct NDK version
-        run: sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's|ndkVersion = flutter.ndkVersion|ndkVersion = "27.0.12077973"|' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            sed -i "s/ndkVersion flutter.ndkVersion/ndkVersion '27.0.12077973'/" android/app/build.gradle
+          fi
 
       # Descarregar as bibliotecas oficiais do Tox
       - name: Download Tox native libraries
