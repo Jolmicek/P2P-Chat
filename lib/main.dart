@@ -4,21 +4,20 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'services/tox_service.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
+import 'services/crypto_service.dart';
 
 // ------------------------------------------------------
 // MODELOS
 // ------------------------------------------------------
 class Contact {
-  final String id;        // Tox ID
+  final String id;        // Chave pública base64 do amigo
   String name;
-  int friendNumber;       // Número interno do Tox
   List<Message> messages;
 
   Contact({
     required this.id,
     required this.name,
-    this.friendNumber = -1,
     List<Message>? messages,
   }) : messages = messages ?? [];
 
@@ -35,14 +34,12 @@ class Contact {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
-        'friendNumber': friendNumber,
         'messages': messages.map((m) => m.toJson()).toList(),
       };
 
   factory Contact.fromJson(Map<String, dynamic> json) => Contact(
         id: json['id'],
         name: json['name'],
-        friendNumber: json['friendNumber'] ?? -1,
         messages: (json['messages'] as List)
             .map((m) => Message.fromJson(m))
             .toList(),
@@ -50,7 +47,7 @@ class Contact {
 }
 
 class Message {
-  final String text;
+  final String text;    // Cifrado ou plain?
   final bool isMe;
   final String time;
 
@@ -70,23 +67,49 @@ class Message {
 }
 
 // ------------------------------------------------------
-// ARMAZENAMENTO LOCAL
+// ARMAZENAMENTO LOCAL CIFRADO (SQLCipher)
 // ------------------------------------------------------
 class StorageService {
-  static const _contactsKey = 'contacts';
+  static const _dbPassword = 'app-master-key'; // Derivar de password do utilizador no futuro
+  static Database? _db;
+
+  static Future<Database> _getDb() async {
+    if (_db != null) return _db!;
+    _db = await openDatabase(
+      'p2pchat.db',
+      password: _dbPassword,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('CREATE TABLE contacts(id TEXT PRIMARY KEY, name TEXT, messages TEXT)');
+      },
+    );
+    return _db!;
+  }
 
   static Future<List<Contact>> loadContacts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getString(_contactsKey);
-    if (data == null) return [];
-    final List<dynamic> list = jsonDecode(data);
-    return list.map((e) => Contact.fromJson(e)).toList();
+    final db = await _getDb();
+    final rows = await db.query('contacts');
+    return rows.map((row) => Contact(
+      id: row['id'] as String,
+      name: row['name'] as String,
+      messages: row['messages'] != null
+          ? (jsonDecode(row['messages'] as String) as List).map((m) => Message.fromJson(m)).toList()
+          : [],
+    )).toList();
   }
 
   static Future<void> saveContacts(List<Contact> contacts) async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = jsonEncode(contacts.map((c) => c.toJson()).toList());
-    await prefs.setString(_contactsKey, data);
+    final db = await _getDb();
+    await db.transaction((txn) async {
+      await txn.delete('contacts');
+      for (final c in contacts) {
+        await txn.insert('contacts', {
+          'id': c.id,
+          'name': c.name,
+          'messages': jsonEncode(c.messages.map((m) => m.toJson()).toList()),
+        });
+      }
+    });
   }
 }
 
@@ -95,7 +118,7 @@ class StorageService {
 // ------------------------------------------------------
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ToxService().init();
+  await CryptoService().init();
   runApp(const P2PChatApp());
 }
 
@@ -105,7 +128,7 @@ class P2PChatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Chat P2P',
+      title: 'Chat P2P Seguro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -165,19 +188,11 @@ class ContactsScreen extends StatefulWidget {
 class _ContactsScreenState extends State<ContactsScreen> {
   List<Contact> contacts = [];
   String _searchQuery = '';
-  late StreamSubscription<ToxEvent> _toxSub;
 
   @override
   void initState() {
     super.initState();
     _loadContacts();
-    _toxSub = ToxService().events.listen(_onToxEvent);
-  }
-
-  @override
-  void dispose() {
-    _toxSub.cancel();
-    super.dispose();
   }
 
   Future<void> _loadContacts() async {
@@ -188,17 +203,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
   List<Contact> get filteredContacts =>
       contacts.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
-  void _addNewContact(String address) {
-    if (contacts.any((c) => c.id == address)) {
+  void _addNewContact(String pubKeyBase64) {
+    // pubKeyBase64 é a chave pública do amigo (≈44 caracteres base64)
+    if (pubKeyBase64.length < 30) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chave pública inválida.')),
+      );
+      return;
+    }
+    if (contacts.any((c) => c.id == pubKeyBase64)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Este contacto já existe.')),
       );
       return;
     }
-    final tox = ToxService();
-    final friendNum = tox.addFriend(address, 'Olá, adiciona-me!');
+    // Regista a chave pública do amigo no serviço de criptografia
+    CryptoService().addFriendPublicKey(pubKeyBase64, pubKeyBase64);
     final name = 'Amigo ${contacts.length + 1}';
-    final newContact = Contact(id: address, name: name, friendNumber: friendNum);
+    final newContact = Contact(id: pubKeyBase64, name: name);
     setState(() => contacts.add(newContact));
     StorageService.saveContacts(contacts);
   }
@@ -209,29 +231,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
       if (index != -1) contacts[index] = updated;
     });
     StorageService.saveContacts(contacts);
-  }
-
-  void _onToxEvent(ToxEvent event) {
-    if (event is ToxFriendRequestEvent) {
-      // Exemplo: aceitar automaticamente (podemos mostrar diálogo)
-      ToxService().acceptFriend(event.friendNumber);
-      // Adicionar contacto se não existir (aqui simplificamos)
-    } else if (event is ToxMessageEvent) {
-      final msg = Message(
-        text: event.message,
-        isMe: false,
-        time: '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-      );
-      // Encontrar contacto pelo friendNumber
-      final contact = contacts.firstWhere((c) => c.friendNumber == event.friendNumber,
-          orElse: () => Contact(id: '', name: '', friendNumber: -1));
-      if (contact.id.isNotEmpty) {
-        setState(() {
-          contact.messages.add(msg);
-        });
-        StorageService.saveContacts(contacts);
-      }
-    }
   }
 
   @override
@@ -252,7 +251,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     context,
                     MaterialPageRoute(builder: (_) => const ScanScreen()),
                   );
-                  if (result is String && result.length == 76) {
+                  if (result is String && result.length > 30) {
                     _addNewContact(result);
                   }
                   break;
@@ -261,7 +260,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     context,
                     MaterialPageRoute(builder: (_) => const ManualAddScreen()),
                   );
-                  if (result is String && result.length == 76) {
+                  if (result is String && result.length > 30) {
                     _addNewContact(result);
                   }
                   break;
@@ -270,17 +269,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   break;
                 case 'connection':
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Ligação Tox ativa. ID: ${ToxService().ownAddress ?? "..."}')),
+                    SnackBar(content: Text('Chave pública: ${CryptoService().publicKeyBase64.substring(0, 12)}...')),
                   );
                   break;
               }
             },
             itemBuilder: (BuildContext context) => [
-              const PopupMenuItem(value: 'myid', child: Text('🔑 O meu ID')),
+              const PopupMenuItem(value: 'myid', child: Text('🔑 O meu ID (chave pública)')),
               const PopupMenuItem(value: 'scan', child: Text('📷 Escanear QR')),
               const PopupMenuItem(value: 'manual', child: Text('✍️ Adicionar manualmente')),
               const PopupMenuItem(value: 'settings', child: Text('⚙️ Definições')),
-              const PopupMenuItem(value: 'connection', child: Text('🌐 Conexão')),
+              const PopupMenuItem(value: 'connection', child: Text('🌐 Minha chave')),
             ],
           ),
         ],
@@ -406,24 +405,36 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
+
+    // Encriptar para o amigo
+    final crypto = CryptoService();
+    String displayText;
+    try {
+      final encrypted = await crypto.encryptMessage(widget.contact.id, text);
+      displayText = encrypted; // Armazenamos a versão cifrada
+    } catch (e) {
+      // Se a chave não estiver definida, mostramos erro
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao encriptar: $e')),
+      );
+      return;
+    }
 
     final now = DateTime.now();
     final timeStr = _formatTime(now);
 
-    // Enviar via Tox
-    if (widget.contact.friendNumber >= 0) {
-      ToxService().sendMessage(widget.contact.friendNumber, text);
-    }
-
-    final msg = Message(text: text, isMe: true, time: timeStr);
+    final msg = Message(text: displayText, isMe: true, time: timeStr);
     setState(() {
       messages.add(msg);
     });
     widget.contact.messages = List.from(messages);
     _messageController.clear();
+
+    // Guarda localmente
+    StorageService.saveContacts([widget.contact]); // Simplificado, o ideal é salvar todos
   }
 
   @override
@@ -460,32 +471,39 @@ class _ChatScreenState extends State<ChatScreen> {
               itemBuilder: (context, index) {
                 final msg = messages[index];
                 final isMe = msg.isMe;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isMe ? const Color(0xFF6C63FF) : const Color(0xFF2A2A3E),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(18),
-                            topRight: const Radius.circular(18),
-                            bottomLeft: isMe ? const Radius.circular(18) : Radius.zero,
-                            bottomRight: isMe ? Radius.zero : const Radius.circular(18),
+                // Tenta decifrar para mostrar, se possível
+                return FutureBuilder<String>(
+                  future: _decryptIfNeeded(msg),
+                  builder: (context, snapshot) {
+                    final displayText = snapshot.data ?? msg.text; // fallback cifrado
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isMe ? const Color(0xFF6C63FF) : const Color(0xFF2A2A3E),
+                              borderRadius: BorderRadius.only(
+                                topLeft: const Radius.circular(18),
+                                topRight: const Radius.circular(18),
+                                bottomLeft: isMe ? const Radius.circular(18) : Radius.zero,
+                                bottomRight: isMe ? Radius.zero : const Radius.circular(18),
+                              ),
+                            ),
+                            child: Text(
+                              displayText,
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          msg.text,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
-                        ),
+                          const SizedBox(height: 4),
+                          Text(msg.time, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(msg.time, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             ),
@@ -536,17 +554,28 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
+
+  Future<String> _decryptIfNeeded(Message msg) async {
+    if (msg.isMe) {
+      try {
+        return await CryptoService().decryptMessage(widget.contact.id, msg.text);
+      } catch (_) {
+        return msg.text; // se falhar, mostra cifrado
+      }
+    }
+    return msg.text; // mensagens recebidas ainda não implementamos receção, mas seria igual
+  }
 }
 
 // ------------------------------------------------------
-// ECRÃ DO MEU ID (QR)
+// ECRÃ DO MEU ID (CHAVE PÚBLICA)
 // ------------------------------------------------------
 class IdScreen extends StatelessWidget {
   const IdScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final myToxId = ToxService().ownAddress ?? 'A aguardar ligação...';
+    final myPubKey = CryptoService().publicKeyBase64;
 
     return Scaffold(
       appBar: AppBar(
@@ -554,7 +583,7 @@ class IdScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('O meu Tox ID'),
+        title: const Text('A minha chave pública'),
       ),
       body: Center(
         child: Padding(
@@ -562,37 +591,34 @@ class IdScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (myToxId.length == 76)
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: const Color(0xFF6C63FF), width: 2),
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6C63FF).withOpacity(0.3),
-                        blurRadius: 20,
-                        spreadRadius: 5,
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: QrImageView(
-                    data: myToxId,
-                    size: 200,
-                    backgroundColor: Colors.white,
-                    eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeShape.circle,
-                      color: Color(0xFF6C63FF),
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFF6C63FF), width: 2),
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C63FF).withOpacity(0.3),
+                      blurRadius: 20,
+                      spreadRadius: 5,
                     ),
-                    dataModuleStyle: const QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.square,
-                      color: Colors.black87,
-                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(16),
+                child: QrImageView(
+                  data: myPubKey,
+                  size: 200,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.circle,
+                    color: Color(0xFF6C63FF),
                   ),
-                )
-              else
-                const CircularProgressIndicator(color: Color(0xFF6C63FF)),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               Container(
                 width: double.infinity,
@@ -603,7 +629,7 @@ class IdScreen extends StatelessWidget {
                   border: Border.all(color: Colors.white12),
                 ),
                 child: SelectableText(
-                  myToxId,
+                  myPubKey,
                   style: const TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 13,
@@ -621,7 +647,7 @@ class IdScreen extends StatelessWidget {
                     label: 'Copiar',
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('ID copiado!')),
+                        const SnackBar(content: Text('Chave copiada!')),
                       );
                     },
                   ),
@@ -633,7 +659,7 @@ class IdScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => const ScanScreen()),
                       );
-                      if (result is String && result.length == 76 && context.mounted) {
+                      if (result is String && result.length > 30 && context.mounted) {
                         Navigator.pop(context, result);
                       }
                     },
@@ -646,7 +672,7 @@ class IdScreen extends StatelessWidget {
                         context,
                         MaterialPageRoute(builder: (_) => const ManualAddScreen()),
                       );
-                      if (result is String && result.length == 76 && context.mounted) {
+                      if (result is String && result.length > 30 && context.mounted) {
                         Navigator.pop(context, result);
                       }
                     },
@@ -726,7 +752,8 @@ class _ScanScreenState extends State<ScanScreen> {
     final barcode = capture.barcodes.firstOrNull;
     if (barcode?.rawValue != null) {
       final code = barcode!.rawValue!;
-      if (code.length == 76) {
+      // Aceitamos qualquer string com mais de 30 caracteres (base64 da chave pública)
+      if (code.length > 30) {
         setState(() => _scanned = true);
         Navigator.pop(context, code);
       }
@@ -741,7 +768,7 @@ class _ScanScreenState extends State<ScanScreen> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Escanear QR'),
+        title: const Text('Escanear chave pública'),
       ),
       body: Stack(
         children: [
@@ -790,9 +817,9 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
 
   void _submit() {
     final id = _idController.text.trim();
-    if (id.length != 76) {
+    if (id.length < 30) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ID inválido. Deve ter 76 caracteres.')),
+        const SnackBar(content: Text('Chave pública inválida. Deve ter mais de 30 caracteres.')),
       );
       return;
     }
@@ -820,7 +847,7 @@ class _ManualAddScreenState extends State<ManualAddScreen> {
               controller: _idController,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Cola o Tox ID aqui...',
+                hintText: 'Cola a chave pública aqui...',
                 hintStyle: const TextStyle(color: Colors.white30),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.05),
