@@ -1,4 +1,4 @@
-name: Build APK with Tox (official binaries v0.2.23)
+name: Build APK with Tox (final)
 
 on:
   push:
@@ -22,27 +22,38 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Regenerate Android platform (fix Gradle)
+      # Garantir que o nome do projeto é válido
+      - name: Fix project name
         run: |
-          flutter create --platforms android .
-          # Corrigir a versão do NDK no ficheiro gerado
-          sed -i 's/ndkVersion = flutter.ndkVersion/ndkVersion = "27.0.12077973"/' android/app/build.gradle.kts
+          sed -i 's/^name:.*/name: p2p_chat/' pubspec.yaml
+          cat pubspec.yaml | grep 'name:'
 
+      # Fazer backup do AndroidManifest (contém as tuas permissões)
+      - name: Backup AndroidManifest
+        run: cp android/app/src/main/AndroidManifest.xml AndroidManifest_backup.xml
+
+      # Regenerar a estrutura Android (corrige problemas de Gradle)
+      - name: Regenerate Android platform
+        run: flutter create --platforms android .
+
+      # Restaurar o AndroidManifest original (com permissões)
+      - name: Restore AndroidManifest
+        run: cp -f AndroidManifest_backup.xml android/app/src/main/AndroidManifest.xml
+
+      # Forçar a versão correta do NDK
+      - name: Force NDK version
+        run: sed -i 's/ndkVersion = flutter.ndkVersion/ndkVersion = "27.0.12077973"/' android/app/build.gradle.kts
+
+      # Descarregar as bibliotecas oficiais do Tox
       - name: Download and extract official Tox Android binaries
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           mkdir -p android/app/src/main/jniLibs/x86_64
-
-          # arm64-v8a
           wget -q https://github.com/TokTok/c-toxcore/releases/download/v0.2.23/toxcore-v0.2.23-android-arm64-v8a.tar.gz
           tar -xzf toxcore-v0.2.23-android-arm64-v8a.tar.gz -C android/app/src/main/jniLibs/arm64-v8a --strip-components=1
-
-          # armeabi-v7a
           wget -q https://github.com/TokTok/c-toxcore/releases/download/v0.2.23/toxcore-v0.2.23-android-armeabi-v7a.tar.gz
           tar -xzf toxcore-v0.2.23-android-armeabi-v7a.tar.gz -C android/app/src/main/jniLibs/armeabi-v7a --strip-components=1
-
-          # x86_64
           wget -q https://github.com/TokTok/c-toxcore/releases/download/v0.2.23/toxcore-v0.2.23-android-x86_64.tar.gz
           tar -xzf toxcore-v0.2.23-android-x86_64.tar.gz -C android/app/src/main/jniLibs/x86_64 --strip-components=1
 
