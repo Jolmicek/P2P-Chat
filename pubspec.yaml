@@ -1,0 +1,23 @@
+name: p2p_chat
+description: Chat P2P seguro
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^3.5.7
+  google_fonts: ^6.1.0
+  flutter_animate: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
