@@ -1,5 +1,5 @@
 name: p2p_chat
-description: Chat P2P seguro com encriptação ponta a ponta
+description: Chat P2P seguro com encriptação ponta a ponta (Tox)
 
 publish_to: 'none'
 version: 1.0.0+1
@@ -15,7 +15,8 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_animate: ^4.2.0
   shared_preferences: ^2.2.2
-  toxcore_ffi: ^0.2.12
+  path_provider: ^2.1.2   # para possíveis ficheiros
+  ffi: ^2.1.0              # FFI nativo
 
 dev_dependencies:
   flutter_test:
