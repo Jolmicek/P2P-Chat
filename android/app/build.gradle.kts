@@ -35,28 +35,18 @@ android {
     }
 }
 
-// ADICIONA ESTE BLOCO NO FUNDO DO FICHEIRO:
 dependencies {
-    // Alinha todas as versões do Kotlin
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.22"))
-    
-    // FORÇA as dependências fantasma a usar a versão nova (que vem vazia e não dá conflito)
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22")
 }
 
 configurations.all {
-    resolutionStrategy {
-        // Força o Gradle a rejeitar qualquer versão antiga do kotlin-stdlib-*
-        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22")
-        
-        // Se alguma dependência insistir em puxar o 1.7.x, o Gradle descarta-a automaticamente
-        eachDependency {
-            if (requested.group == "org.jetbrains.kotlin") {
-                useVersion("1.9.22")
-            }
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin") {
+            useVersion("1.9.22")
+            because("Unifica todas as dependências do Kotlin para evitar conflitos de classes duplicadas")
         }
     }
 }
