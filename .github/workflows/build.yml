@@ -1,3 +1,4 @@
+
 name: Build APK with Tox (final)
 
 on:
@@ -8,6 +9,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Clean Flutter project
+        run: flutter clean
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build APK Release
+        run: flutter build apk --release
       - uses: actions/checkout@v4
 
       - name: Setup Java
