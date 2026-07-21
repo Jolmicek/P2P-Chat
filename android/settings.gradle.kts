@@ -22,3 +22,27 @@ plugins {
 }
 
 include(":app")
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+    versionCatalogs {
+    }
+    // Força global para eliminar qualquer conflito de bibliotecas do Kotlin em qualquer submódulo
+    configurations.all {
+        resolutionStrategy {
+            force("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
+            force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22")
+            
+            eachDependency {
+                if (requested.group == "org.jetbrains.kotlin") {
+                    useVersion("1.9.22")
+                }
+            }
+        }
+    }
+}
