@@ -30,7 +30,12 @@ android {
 
 // ADICIONA ESTE BLOCO NO FUNDO DO FICHEIRO:
 dependencies {
+    // Alinha todas as versões do Kotlin
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.22"))
+    
+    // FORÇA as dependências fantasma a usar a versão nova (que vem vazia e não dá conflito)
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22")
 }
 
 configurations.all {
