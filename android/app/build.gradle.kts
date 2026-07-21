@@ -39,6 +39,17 @@ dependencies {
 }
 
 configurations.all {
-    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
-    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    resolutionStrategy {
+        // Força o Gradle a rejeitar qualquer versão antiga do kotlin-stdlib-*
+        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22")
+        
+        // Se alguma dependência insistir em puxar o 1.7.x, o Gradle descarta-a automaticamente
+        eachDependency {
+            if (requested.group == "org.jetbrains.kotlin") {
+                useVersion("1.9.22")
+            }
+        }
+    }
 }
