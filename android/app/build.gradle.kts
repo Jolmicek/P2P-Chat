@@ -26,6 +26,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        resources.excludes.add("META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+        resources.excludes.add("META-INF/kotlin-stdlib.kotlin_module")
+        resources.excludes.add("META-INF/kotlin-stdlib-jdk7.kotlin_module")
+        resources.excludes.add("META-INF/kotlin-stdlib-jdk8.kotlin_module")
+    }
 }
 
 // ADICIONA ESTE BLOCO NO FUNDO DO FICHEIRO:
