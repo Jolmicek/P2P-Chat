@@ -10,15 +10,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  qr_flutter: ^4.1.0
-  mobile_scanner: ^3.5.7
-  google_fonts: ^6.1.0
-  flutter_animate: ^4.2.0
-  shared_preferences: ^2.2.3    # <-- ATUALIZADO (resolve o conflito do Kotlin)
-  sqflite: ^2.3.3              # <-- Atualizado por segurança
+  qr_flutter: ^4.2.0
+  mobile_scanner: ^5.2.3     # Versão moderna compatível com Kotlin recente
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  shared_preferences: ^2.3.2  # Atualizado
+  sqflite: ^2.4.0              # Atualizado
   cryptography: ^2.7.0
-  path_provider: ^2.1.2
-  ffi: ^2.1.0
+  path_provider: ^2.1.4
+  ffi: ^2.1.3
 
 dev_dependencies:
   flutter_test:
