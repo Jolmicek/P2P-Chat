@@ -32,3 +32,8 @@ android {
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.22"))
 }
+
+configurations.all {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+}
