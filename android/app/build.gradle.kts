@@ -27,3 +27,8 @@ android {
         }
     }
 }
+
+// ADICIONA ESTE BLOCO NO FUNDO DO FICHEIRO:
+dependencies {
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.22"))
+}
